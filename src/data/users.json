@@ -1,0 +1,26 @@
+[
+  {
+    "id": 1,
+    "username": "user",
+    "password": "pass",
+    "isAdmin": false,
+    "email": "user@example.com",
+    "createdAt": "2025-01-01"
+  },
+  {
+    "id": 2,
+    "username": "admin",
+    "password": "pass",
+    "isAdmin": true,
+    "email": "admin@example.com",
+    "createdAt": "2025-01-01"
+  },
+  {
+    "id": 3,
+    "username": "Lucass17",
+    "password": "Lego1234",
+    "isAdmin": false,
+    "email": "lucas.sawford@icloud.com",
+    "createdAt": "2025-07-27"
+  }
+]
