@@ -1,280 +1,214 @@
 import * as THREE from 'three';
 
 export class MobileOptimizedARScene {
-  constructor(container, video, optimizer) {
-    this.container = container;
-    this.video = video;
+  constructor(poseService, arScene, optimizer) {
+    this.poseService = poseService;
+    this.arScene = arScene;
     this.optimizer = optimizer;
-    this.settings = optimizer.optimizationSettings;
+    this.isTracking = false;
     
-    this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+    this.trackingInterval = Math.floor(1000 / optimizer.optimizationSettings.trackingFPS);
+    this.frameSkip = optimizer.performanceLevel === 'minimal' ? 3 : 1;
+    this.currentFrame = 0;
+    this.frameId = 0;
     
-    // Mobile-optimized renderer setup
-    this.renderer = new THREE.WebGLRenderer({ 
-      alpha: true,
-      antialias: this.settings.antialiasing,
-      powerPreference: optimizer.deviceInfo.isMobile ? 'low-power' : 'high-performance',
-      precision: optimizer.performanceLevel === 'minimal' ? 'lowp' : 'highp'
-    });
+    this.positionHistory = [];
+    this.maxHistorySize = 5;
     
-    this.currentToteModel = null;
-    this.videoMesh = null;
+    this.video = null;
+    this.worker = null;
+    this.workerSupported = false;
     
-    this.setupMobileScene();
-    this.setupTouchControls();
+    this.setupWorker();
   }
 
-  setupMobileScene() {
-    const { renderScale, shadowQuality } = this.settings;
-    
-    // Set render scale for performance
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio * renderScale, 2));
-    this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
-    
-    // Shadow configuration based on performance
-    if (shadowQuality !== 'none') {
-      this.renderer.shadowMap.enabled = true;
-      this.renderer.shadowMap.type = shadowQuality === 'high' ? 
-        THREE.PCFSoftShadowMap : THREE.BasicShadowMap;
-    }
-    
-    // Optimized lighting setup
-    this.setupOptimizedLighting();
-    
-    // Video background with performance optimization
-    this.setupVideoBackground();
-    
-    this.container.appendChild(this.renderer.domElement);
-  }
+  async setupWorker() {
+    if (typeof Worker !== 'undefined' && this.optimizer.performanceLevel !== 'minimal') {
+      try {
+        this.worker = new Worker(
+          new URL('../../../workers/pose-workers.js', import.meta.url),
+          { type: 'module' }
+        );
+        this.workerSupported = true;
 
-  setupOptimizedLighting() {
-    const { shadowQuality } = this.settings;
-    
-    // Minimal lighting for low-end devices
-    if (this.optimizer.performanceLevel === 'minimal') {
-      const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
-      this.scene.add(ambientLight);
-      return;
-    }
-    
-    // Standard lighting setup
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);
-    
-    directionalLight.position.set(10, 10, 5);
-    
-    // Shadows only for medium+ performance
-    if (shadowQuality !== 'none' && shadowQuality !== 'low') {
-      directionalLight.castShadow = true;
-      directionalLight.shadow.mapSize.width = this.settings.textureSize;
-      directionalLight.shadow.mapSize.height = this.settings.textureSize;
-    }
-    
-    this.scene.add(ambientLight);
-    this.scene.add(directionalLight);
-  }
+        this.worker.onmessage = (e) => {
+          this.handleWorkerMessage(e.data);
+        };
 
-  setupVideoBackground() {
-    try {
-      const videoTexture = new THREE.VideoTexture(this.video);
-      videoTexture.minFilter = THREE.LinearFilter;
-      videoTexture.magFilter = THREE.LinearFilter;
-      
-      // Reduce video texture updates for performance
-      if (this.optimizer.performanceLevel === 'low' || this.optimizer.performanceLevel === 'minimal') {
-        videoTexture.generateMipmaps = false;
+        this.worker.onerror = (error) => {
+          console.error('Worker error:', error);
+          this.workerSupported = false;
+          this.worker = null;
+        };
+
+        this.worker.postMessage({ type: 'INIT' });
+        console.log('Web Worker initialized for pose processing');
+      } catch (error) {
+        console.log('Web Worker not available, using main thread:', error);
+        this.workerSupported = false;
       }
-      
-      const videoMaterial = new THREE.MeshBasicMaterial({ map: videoTexture });
-      const videoGeometry = new THREE.PlaneGeometry(16, 9);
-      this.videoMesh = new THREE.Mesh(videoGeometry, videoMaterial);
-      this.videoMesh.position.z = -10;
-      
-      this.scene.add(this.videoMesh);
-      
-    } catch (error) {
-      console.error('Video background setup failed:', error);
-      // Fallback to solid color background
-      this.renderer.setClearColor(0x000000, 0);
     }
   }
 
-  setupTouchControls() {
-    if (!this.optimizer.deviceInfo.isMobile) return;
-    
-    let isRotating = false;
-    let previousTouch = null;
-    
-    this.renderer.domElement.addEventListener('touchstart', (e) => {
-      e.preventDefault();
-      if (e.touches.length === 1) {
-        isRotating = true;
-        previousTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-      }
-    });
-    
-    this.renderer.domElement.addEventListener('touchmove', (e) => {
-      e.preventDefault();
-      if (isRotating && e.touches.length === 1 && this.currentToteModel) {
-        const touch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-        const deltaX = touch.x - previousTouch.x;
-        
-        // Rotate tote model based on touch
-        this.currentToteModel.rotation.y += deltaX * 0.01;
-        previousTouch = touch;
-      }
-    });
-    
-    this.renderer.domElement.addEventListener('touchend', () => {
-      isRotating = false;
-    });
-  }
+  handleWorkerMessage(message) {
+    const { type, data } = message;
 
-  async loadToteModel(productData) {
-    const { modelQuality } = this.settings;
-    
-    try {
-      // Use appropriate model quality
-      const modelUrl = productData.models?.[modelQuality] || this.getFallbackModelUrl(productData);
-      
-      const loader = new THREE.GLTFLoader();
-      
-      return new Promise((resolve, reject) => {
-        loader.load(modelUrl, (gltf) => {
-          const toteModel = gltf.scene;
-          
-          // Optimize model for mobile
-          this.optimizeModelForMobile(toteModel);
-          
-          // Scale based on device
-          const scale = this.optimizer.deviceInfo.isMobile ? 0.4 : 0.5;
-          toteModel.scale.set(scale, scale, scale);
-          
-          // Remove existing model
-          if (this.currentToteModel) {
-            this.scene.remove(this.currentToteModel);
-          }
-          
-          this.scene.add(toteModel);
-          this.currentToteModel = toteModel;
-          
-          resolve(toteModel);
-        }, undefined, reject);
-      });
-    } catch (error) {
-      console.error('Model loading failed:', error);
-      return this.loadFallbackModel(productData);
+    switch (type) {
+      case 'INIT_SUCCESS':
+        console.log('Pose worker initialized successfully');
+        break;
+
+      case 'POSE_FRAME':
+        // Process blob with existing poseService on the main thread
+        this.poseService.detectPose(data.imageData).then((poseData) => {
+          this.updateTotePosition(poseData, true);
+        });
+        break;
+
+      case 'ERROR':
+        console.error('Worker pose detection error:', data.message);
+        this.workerSupported = false;
+        break;
+
+      case 'CLEANUP_SUCCESS':
+        console.log('Worker cleanup completed');
+        break;
     }
   }
 
-  async loadFallbackModel(productData) {
-    // Create a simple box as fallback
-    const geometry = new THREE.BoxGeometry(0.3, 0.4, 0.1);
-    const material = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+  startTracking(video) {
+    this.isTracking = true;
+    this.video = video;
+    this.frameId = 0;
+    this.trackingLoop();
+  }
+
+  stopTracking() {
+    this.isTracking = false;
     
-    // Remove existing model
-    if (this.currentToteModel) {
-      this.scene.remove(this.currentToteModel);
+    if (this.worker) {
+      this.worker.postMessage({ type: 'CLEANUP' });
+      this.worker.terminate();
+      this.worker = null;
     }
-    
-    this.currentToteModel = new THREE.Mesh(geometry, material);
-    this.scene.add(this.currentToteModel);
-    
-    return this.currentToteModel;
-  }
-
-  getFallbackModelUrl(productData) {
-    // Return a generic model URL based on product category
-    const category = productData.category || 'default';
-    return `/models/fallback/${category}-tote.glb`;
-  }
-
-  optimizeModelForMobile(model) {
-    const { maxPolygons, textureSize } = this.settings;
-    
-    model.traverse((child) => {
-      if (child.isMesh) {
-        // Optimize materials
-        if (child.material) {
-          child.material.transparent = false; // Disable transparency for performance
-          
-          // Disable features for low-end devices
-          if (this.optimizer.performanceLevel === 'minimal') {
-            child.material.roughness = 0.5; // Fixed roughness
-            child.material.metalness = 0; // No metallic reflection
-            child.castShadow = false;
-            child.receiveShadow = false;
-          }
-        }
-      }
-    });
   }
 
   updateVideo(newVideo) {
     this.video = newVideo;
-    this.setupVideoBackground();
   }
 
-  async capturePhoto() {
-    return new Promise((resolve) => {
-      // Temporarily increase resolution for capture
-      const originalSize = {
-        width: this.renderer.domElement.width,
-        height: this.renderer.domElement.height
-      };
-      
-      this.renderer.setSize(1080, 1920);
-      this.renderer.render(this.scene, this.camera);
-      
-      // Capture the frame
-      this.renderer.domElement.toBlob((blob) => {
-        // Restore original size
-        this.renderer.setSize(originalSize.width, originalSize.height);
-        resolve(blob);
-      }, 'image/jpeg', 0.9);
-    });
-  }
-
-  handleResize() {
-    const width = this.container.clientWidth;
-    const height = this.container.clientHeight;
+  async trackingLoop() {
+    if (!this.isTracking) return;
     
-    this.camera.aspect = width / height;
-    this.camera.updateProjectionMatrix();
-    this.renderer.setSize(width, height);
-    
-    // Update video background aspect ratio
-    if (this.videoMesh && this.video) {
-      const videoAspect = this.video.videoWidth / this.video.videoHeight;
-      const containerAspect = width / height;
-      
-      if (videoAspect > containerAspect) {
-        this.videoMesh.scale.set(containerAspect / videoAspect, 1, 1);
-      } else {
-        this.videoMesh.scale.set(1, videoAspect / containerAspect, 1);
+    try {
+      this.currentFrame++;
+      if (this.currentFrame % this.frameSkip === 0) {
+        await this.captureAndProcessFrame();
       }
+    } catch (error) {
+      console.error('Pose tracking error:', error);
+    }
+    
+    setTimeout(() => this.trackingLoop(), this.trackingInterval);
+  }
+
+  async captureAndProcessFrame() {
+    if (!this.video || this.video.readyState < 2) return;
+    
+    try {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      const scale = this.optimizer.deviceInfo.isMobile ? 0.5 : 1;
+      canvas.width = this.video.videoWidth * scale;
+      canvas.height = this.video.videoHeight * scale;
+      
+      ctx.drawImage(this.video, 0, 0, canvas.width, canvas.height);
+      
+      canvas.toBlob(async (blob) => {
+        if (this.workerSupported && this.worker) {
+          this.frameId++;
+          this.worker.postMessage({
+            type: 'DETECT_POSE',
+            data: { imageData: blob, timestamp: Date.now(), frameId: this.frameId }
+          });
+        } else {
+          // fallback to main thread detection
+          const poseData = await this.poseService.detectPose(blob);
+          this.updateTotePosition(poseData, false);
+        }
+      }, 'image/jpeg', 0.7);
+      
+    } catch (error) {
+      console.error('Frame capture failed:', error);
     }
   }
 
-  render() {
-    if (this.renderer && this.scene && this.camera) {
-      requestAnimationFrame(() => this.render());
-      this.renderer.render(this.scene, this.camera);
+  updateTotePosition(poseData, isFromWorker) {
+    if (!this.arScene.currentToteModel || !poseData) return;
+    
+    const { leftShoulder, rightShoulder } = poseData;
+    if (!leftShoulder || !rightShoulder || 
+        leftShoulder.confidence < 0.5 || rightShoulder.confidence < 0.5) {
+      return;
     }
+    
+    const shoulderCenter = {
+      x: (leftShoulder.x + rightShoulder.x) / 2,
+      y: (leftShoulder.y + rightShoulder.y) / 2
+    };
+    
+    this.positionHistory.push(shoulderCenter);
+    if (this.positionHistory.length > this.maxHistorySize) {
+      this.positionHistory.shift();
+    }
+    
+    const smoothedPosition = this.calculateSmoothedPosition();
+    const worldPosition = this.screenToWorld(smoothedPosition);
+    
+    this.applyPositionWithInterpolation(worldPosition, leftShoulder, rightShoulder);
   }
 
-  dispose() {
-    if (this.currentToteModel) {
-      this.scene.remove(this.currentToteModel);
-    }
+  calculateSmoothedPosition() {
+    if (this.positionHistory.length === 0) return { x: 0.5, y: 0.5 };
     
-    if (this.videoMesh) {
-      this.scene.remove(this.videoMesh);
-    }
+    const totalWeight = this.positionHistory.length;
+    let smoothedX = 0;
+    let smoothedY = 0;
     
-    if (this.renderer) {
-      this.renderer.dispose();
-    }
+    this.positionHistory.forEach((pos, index) => {
+      const weight = (index + 1) / totalWeight;
+      smoothedX += pos.x * weight;
+      smoothedY += pos.y * weight;
+    });
+    
+    const weightSum = this.positionHistory.reduce(
+      (sum, _, index) => sum + (index + 1) / totalWeight, 0
+    );
+    
+    return { x: smoothedX / weightSum, y: smoothedY / weightSum };
+  }
+
+  applyPositionWithInterpolation(worldPosition, leftShoulder, rightShoulder) {
+    const model = this.arScene.currentToteModel;
+    const targetPosition = new THREE.Vector3(worldPosition.x, worldPosition.y - 0.5, worldPosition.z);
+    
+    const lerpFactor = this.optimizer.deviceInfo.isMobile ? 0.1 : 0.2;
+    model.position.lerp(targetPosition, lerpFactor);
+    
+    const shoulderAngle = Math.atan2(
+      rightShoulder.y - leftShoulder.y,
+      rightShoulder.x - leftShoulder.x
+    );
+    
+    const targetRotation = new THREE.Euler(0, 0, shoulderAngle);
+    model.rotation.z = THREE.MathUtils.lerp(model.rotation.z, targetRotation.z, lerpFactor);
+  }
+
+  screenToWorld(screenPoint) {
+    const x = (screenPoint.x - 0.5) * 4;
+    const y = -(screenPoint.y - 0.5) * 3;
+    const z = 0;
+    return { x, y, z };
   }
 }

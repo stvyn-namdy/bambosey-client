@@ -1,2 +1,2 @@
 export { MobilePoseTracker } from './MobilePoseTracker';
-export { PoseDetectionService } from './PoseDetectionService';
+export { PoseDetectionService } from './PoseDectectionService';

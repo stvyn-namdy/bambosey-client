@@ -11,95 +11,24 @@ export class MobilePoseTracker {
     this.trackingInterval = Math.floor(1000 / optimizer.optimizationSettings.trackingFPS);
     this.frameSkip = optimizer.performanceLevel === 'minimal' ? 3 : 1;
     this.currentFrame = 0;
-    this.frameId = 0;
     
     // Prediction smoothing for mobile
     this.positionHistory = [];
     this.maxHistorySize = 5;
     
     this.video = null;
-    this.worker = null;
-    this.workerSupported = false;
     
-    this.setupWorker();
-  }
-
-  async setupWorker() {
-    // Use Web Worker for pose processing on capable devices
-    if (typeof Worker !== 'undefined' && this.optimizer.performanceLevel !== 'minimal') {
-      try {
-        // Use absolute path from public directory
-        this.worker = new Worker('/workers/pose-worker.js');
-        this.workerSupported = true;
-        
-        // Setup worker message handling
-        this.worker.onmessage = (e) => {
-          this.handleWorkerMessage(e.data);
-        };
-        
-        this.worker.onerror = (error) => {
-          console.error('Worker error:', error);
-          this.workerSupported = false;
-          this.worker = null;
-        };
-
-        // Initialize worker with Azure credentials
-        this.worker.postMessage({
-          type: 'INIT',
-          data: {
-            endpoint: process.env.NEXT_PUBLIC_AZURE_VISION_ENDPOINT,
-            apiKey: process.env.NEXT_PUBLIC_AZURE_VISION_KEY
-          }
-        });
-        
-        console.log('Web Worker initialized for pose processing');
-        
-      } catch (error) {
-        console.log('Web Worker not available, using main thread:', error);
-        this.workerSupported = false;
-      }
-    }
-  }
-
-  handleWorkerMessage(message) {
-    const { type, data } = message;
-    
-    switch (type) {
-      case 'INIT_SUCCESS':
-        console.log('Pose worker initialized successfully');
-        break;
-        
-      case 'POSE_DETECTED':
-        this.updateTotePosition(data.poseData, true);
-        break;
-        
-      case 'ERROR':
-        console.error('Worker pose detection error:', data.message);
-        // Fallback to main thread processing
-        this.workerSupported = false;
-        break;
-        
-      case 'CLEANUP_SUCCESS':
-        console.log('Worker cleanup completed');
-        break;
-    }
+    console.log('MobilePoseTracker initialized (main thread processing)');
   }
 
   startTracking(video) {
     this.isTracking = true;
     this.video = video;
-    this.frameId = 0;
     this.trackingLoop();
   }
 
   stopTracking() {
     this.isTracking = false;
-    
-    if (this.worker) {
-      this.worker.postMessage({ type: 'CLEANUP' });
-      this.worker.terminate();
-      this.worker = null;
-    }
   }
 
   updateVideo(newVideo) {
@@ -141,23 +70,10 @@ export class MobilePoseTracker {
       
       // Convert to blob
       canvas.toBlob(async (blob) => {
-        if (this.workerSupported && this.worker) {
-          // Send to worker for processing
-          this.frameId++;
-          this.worker.postMessage({
-            type: 'DETECT_POSE',
-            data: {
-              imageData: blob,
-              timestamp: Date.now(),
-              frameId: this.frameId
-            }
-          });
-        } else {
-          // Process in main thread
-          const poseData = await this.poseService.detectPose(blob);
-          this.updateTotePosition(poseData, false);
-        }
-      }, 'image/jpeg', 0.7); // Reduced quality for mobile
+        // Process in main thread only
+        const poseData = await this.poseService.detectPose(blob);
+        this.updateTotePosition(poseData, false);
+      }, 'image/jpeg', 0.7);
       
     } catch (error) {
       console.error('Frame capture failed:', error);
