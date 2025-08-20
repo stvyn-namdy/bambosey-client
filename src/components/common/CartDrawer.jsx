@@ -2,7 +2,7 @@
 "use client";
 
 import { Fragment } from "react";
-import { useCart } from "../context/CartContext";
+import { useCart } from "../../context/CartContext";
 import Image from "next/image";
 import Link from "next/link";
 

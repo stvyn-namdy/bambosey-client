@@ -3,8 +3,8 @@
 
 import { Fragment } from "react";
 import Image from "next/image";
-import { useFavorites } from "../context/FavoritesContext";
-import { useCart } from "../context/CartContext";
+import { useFavorites } from "../../context/FavoritesContext";
+import { useCart } from "../../context/CartContext";
 
 export default function FavoritesDrawer({ open, onClose }) {
   const { favorites, removeFromFavorites } = useFavorites();

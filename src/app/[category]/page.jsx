@@ -5,9 +5,9 @@
 import { useState, useEffect, use } from "react";
 import { notFound } from "next/navigation";
 import { useProducts } from "../../context/ProductsContext";
-import SearchBar from "../../components/SearchBar";
-import ProductGrid from "../../components/ProductGrid";
-import FilterDrawer from "../../components/FilterDrawer";
+import SearchBar from "../../components/common/SearchBar";
+import ProductGrid from "../../components/common/ProductGrid";
+import FilterDrawer from "../../components/common/FilterDrawer";
 
 export default function CategoryPage({ params }) {
   const resolvedParams = use(params);

@@ -3,8 +3,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useCart } from "../context/CartContext";
-import { useFavorites } from "../context/FavoritesContext";
+import { useCart } from "../../context/CartContext";
+import { useFavorites } from "../../context/FavoritesContext";
 
 export default function ProductGrid({ products }) {
   const { addItem } = useCart();
