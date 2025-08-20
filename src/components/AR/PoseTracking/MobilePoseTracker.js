@@ -28,7 +28,8 @@ export class MobilePoseTracker {
     // Use Web Worker for pose processing on capable devices
     if (typeof Worker !== 'undefined' && this.optimizer.performanceLevel !== 'minimal') {
       try {
-        this.worker = new Worker('../../../../public/workers/pose-workers.js');
+        // Use absolute path from public directory
+        this.worker = new Worker('/workers/pose-worker.js');
         this.workerSupported = true;
         
         // Setup worker message handling
