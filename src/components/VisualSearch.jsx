@@ -18,7 +18,7 @@
         const formData = new FormData()
         formData.append('file', file)
 
-        const res = await fetch('/find-similar', {
+        const res = await fetch('/api/find-similar', {
             method: 'POST',
             body: formData,
         })

@@ -31,7 +31,7 @@ export default function VisualSearchModal() {
 
     try {
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/find-similar`,
+        `${process.env.NEXT_PUBLIC_API_URL}/api/find-similar`,
         { method: "POST", body: formData }
       );
       if (!res.ok) throw new Error(`Server returned ${res.status}`);
