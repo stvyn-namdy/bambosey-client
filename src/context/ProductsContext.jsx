@@ -9,6 +9,7 @@ const ProductsContext = createContext({
   categories: [],
   colors: [],
   loading: true,
+  error: null,
   searchProducts: async () => {},
   getProductById: async () => {},
   refreshProducts: async () => {},
@@ -19,6 +20,7 @@ export function ProductsProvider({ children }) {
   const [categories, setCategories] = useState([]);
   const [colors, setColors] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   // Load initial data
   useEffect(() => {
@@ -28,8 +30,9 @@ export function ProductsProvider({ children }) {
   const loadInitialData = async () => {
     try {
       setLoading(true);
+      setError(null);
       
-      // Only fetch products and colors since categories endpoint doesn't exist in backend
+      // Fetch products and colors from backend API
       const [productsRes, colorsRes] = await Promise.allSettled([
         api.get(endpoints.products.list),
         api.get(endpoints.colors.list),
@@ -41,10 +44,8 @@ export function ProductsProvider({ children }) {
         const data = productsRes.value.data;
         productsData = Array.isArray(data) ? data : data.products || [];
       } else {
-        console.warn('Failed to fetch products from backend, using fallback data:', productsRes.reason);
-        // Use fallback data from local file
-        const { products: fallbackProducts } = await import('../data/products');
-        productsData = fallbackProducts;
+        console.error('Failed to fetch products from backend:', productsRes.reason);
+        throw new Error('Failed to load products from server');
       }
 
       // Use hardcoded categories since backend doesn't have categories endpoint
@@ -60,26 +61,19 @@ export function ProductsProvider({ children }) {
       if (colorsRes.status === 'fulfilled') {
         colorsData = colorsRes.value.data || [];
       } else {
-        console.warn('Failed to fetch colors from backend, using fallback data:', colorsRes.reason);
-        const { colors: fallbackColors } = await import('../data/products');
-        colorsData = fallbackColors;
+        console.warn('Failed to fetch colors from backend:', colorsRes.reason);
+        // Colors are optional, so we can continue without them
+        colorsData = [];
       }
 
       const transformedProducts = transformProducts(productsData, categoriesData, colorsData);
       setProducts(transformedProducts);
       setCategories(categoriesData);
       setColors(colorsData);
+
     } catch (error) {
       console.error('Failed to load initial data:', error);
-      // Use fallback data as last resort
-      try {
-        const { products: fallbackProducts, categories: fallbackCategories, colors: fallbackColors } = await import('../data/products');
-        setProducts(transformProducts(fallbackProducts, fallbackCategories, fallbackColors));
-        setCategories(fallbackCategories);
-        setColors(fallbackColors);
-      } catch (fallbackError) {
-        console.error('Failed to load fallback data:', fallbackError);
-      }
+      setError(error.message || 'Failed to load product data');
     } finally {
       setLoading(false);
     }
@@ -130,7 +124,7 @@ export function ProductsProvider({ children }) {
       return transformProducts(response.data.products || response.data);
     } catch (error) {
       console.error('Failed to search products:', error);
-      return [];
+      throw new Error('Failed to search products');
     }
   };
 
@@ -141,7 +135,7 @@ export function ProductsProvider({ children }) {
       return transformProducts([product])[0];
     } catch (error) {
       console.error('Failed to get product:', error);
-      return null;
+      throw new Error(`Failed to get product with ID: ${id}`);
     }
   };
 
@@ -163,6 +157,7 @@ export function ProductsProvider({ children }) {
         categories,
         colors,
         loading,
+        error,
         searchProducts,
         getProductById,
         refreshProducts,

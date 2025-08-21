@@ -1,8 +1,8 @@
 // client/src/app/page.jsx
 
-import Hero from "../components/Hero";
-import About from "../components/About";
-import NewArrivals from "../components/NewArrivals";
+import Hero from "../components/common/Hero";
+import About from "../components/common/About";
+import NewArrivals from "../components/common/NewArrivals";
 
 export default function Home() {
   return (
