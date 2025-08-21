@@ -6,7 +6,6 @@ const withPWA = require("next-pwa")({
 
 const nextConfig = {
   reactStrictMode: true,
-
   // Configure images
   images: {
     remotePatterns: [
