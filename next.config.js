@@ -6,7 +6,7 @@ const withPWA = require("next-pwa")({
 
 const nextConfig = {
   reactStrictMode: true,
-  
+
   // Configure images
   images: {
     remotePatterns: [
@@ -33,8 +33,8 @@ const nextConfig = {
     ],
     dangerouslyAllowSVG: true,
   },
-  
-  // Add rewrites for API calls to backend during development
+
+  // Rewrites for backend API
   async rewrites() {
     if (process.env.NODE_ENV === 'development') {
       return [
@@ -43,8 +43,22 @@ const nextConfig = {
           destination: 'http://localhost:3300/api/:path*',
         },
       ];
+    } else if (process.env.NEXT_PUBLIC_ENV === 'staging') {
+      return [
+        {
+          source: '/api/backend/:path*',
+          destination: 'https://bambosey-shop.onrender.com/api/:path*',
+        },
+      ];
+    } else {
+      // production fallback (you can adjust as needed)
+      return [
+        {
+          source: '/api/backend/:path*',
+          destination: 'https://bambosey.com/api/:path*',
+        },
+      ];
     }
-    return [];
   },
 };
 
