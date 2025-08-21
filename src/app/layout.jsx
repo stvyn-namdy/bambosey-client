@@ -1,10 +1,11 @@
 // client/src/app/layout.jsx
-import "./globals.css";
-import Header from "../components/Header";
-import Footer from "../components/Footer";
+import "./styles/globals.css";
+import Header from "../components/common/Header";
+import Footer from "../components/common/Footer";
 import { AuthProvider } from "../context/AuthContext";
 import { CartProvider } from "../context/CartContext";
-import CartDrawer from "../components/CartDrawer";
+import { ARProvider } from "../context/ARContext";
+import CartDrawer from "../components/common/CartDrawer";
 import { FavoritesProvider } from "../context/FavoritesContext";
 import { ProductsProvider } from "../context/ProductsContext";
 
@@ -15,11 +16,13 @@ export default function RootLayout({ children }) {
         <AuthProvider>
           <ProductsProvider>
             <CartProvider>
+              <ARProvider>
               <FavoritesProvider>
                 <Header />
                 <main className="flex-1">{children}</main>
                 <Footer />
               </FavoritesProvider>
+              </ARProvider>
             </CartProvider>
           </ProductsProvider>
         </AuthProvider>
@@ -27,4 +30,3 @@ export default function RootLayout({ children }) {
     </html>
   );
 }
-//test
